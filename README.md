@@ -1,6 +1,7 @@
 # JMVAE
 
 This is a implementation of JMVAE, which is proposed in the following paper:
+
 Masahiro Suzuki, Kotaro Nakayama, Yutaka Matsuo, "Joint Multimodal Learning with Deep Generative Models".
 
 The main code of JMVAE is written on *[Tars](https://github.com/masa-su/Tars)*, which is a framework of deep generation models we developed. Therefore, please install Tars at first before executing codes in this repository.
