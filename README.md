@@ -6,7 +6,7 @@ Masahiro Suzuki, Kotaro Nakayama, Yutaka Matsuo, "Joint Multimodal Learning with
 The main code of JMVAE is written on *[Tars](https://github.com/masa-su/Tars)*, which is a framework of deep generation models we developed. Therefore, please install Tars at first before executing codes in this repository.
 
 # Installation
-Please install [Tars](https://github.com/masa-su/Tars)(v0.0.2) as follows.
+Please install [Tars](https://github.com/masa-su/Tars) (v0.0.2) as follows.
 ```
 $ git clone https://github.com/masa-su/Tars.git -b v0.0.2
 $ pip install -e Tars --process-dependency-links
