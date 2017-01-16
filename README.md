@@ -21,7 +21,7 @@ When you execute this command, the following packages will be automatically inst
 
 # Training models
 You can use ```main_mvae_zero_z_x.py``` and ```main_mvae_kl_z_x.py``` script to train JMVAE-zero and JMVAE-kl on MNIST.
-If you would like to train JMVAE-GAN on CelebA, you should download CelebA dataset, crop them to 64×64, and put them to Tars/datasets before executing ```main_mvaegan_kl_z_x.py```.
+If you would like to train JMVAE-GAN on CelebA, you should download (CelebA dataset)[http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html], crop them to 64×64, and put them to Tars/datasets directory before executing ```main_mvaegan_kl_z_x.py```.
 
 # Citation
 If you use this code for your researches, please cite our paper
