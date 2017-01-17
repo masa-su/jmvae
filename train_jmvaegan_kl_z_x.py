@@ -42,7 +42,6 @@ from Tars.distribution import (
     GaussianConstantVar,
 )
 from Tars.load_data import mnist, celeba
-from main_vaegan_z_xy import plot_sample
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -50,6 +49,19 @@ import matplotlib.pyplot as plt
 sys.setrecursionlimit(5000)
 
 DATAPATH = os.getenv("HOME") + "/share/data/"
+
+
+def plot_sample(plot, sample_x, path):
+    fig = plt.figure(figsize=(10, 10))
+    X, cmap = plot(sample_x)
+
+    for j, x in enumerate(X):
+        ax = fig.add_subplot(10, 10, j + 1)
+        ax.imshow(x, cmap)
+        ax.axis('off')
+
+    plt.savefig('%s/sample.jpg' % path)
+    plt.close()
 
 
 def plot_single_x(model, plot, sample_x, i, path):

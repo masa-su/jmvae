@@ -5,12 +5,12 @@ import pickle
 import tempfile
 import shutil
 
-from Tars.model import MVAE
-from Tars.distribution import Bernoulli, Gaussian, GaussianConstantVar, Categorical
+from Tars.model import VAE
+from Tars.distribution import Bernoulli, Gaussian, GaussianConstantVar
 from Tars.load_data import mnist, celeba, flickr
 
-from lasagne.layers import InputLayer, DenseLayer, Conv2DLayer, batch_norm, FlattenLayer, ReshapeLayer, Deconv2DLayer, ConcatLayer
-from lasagne.nonlinearities import sigmoid, tanh, softplus, rectify, elu, linear, softmax, leaky_rectify, identity
+from lasagne.layers import InputLayer, DenseLayer, Conv2DLayer, batch_norm, FlattenLayer, ReshapeLayer, Deconv2DLayer
+from lasagne.nonlinearities import sigmoid, tanh, softplus, rectify, elu, linear, leaky_rectify
 from lasagne.updates import sgd, momentum, adagrad, adadelta, rmsprop, adam
 
 import sys
@@ -21,31 +21,30 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from sklearn.cross_validation import train_test_split
-from sklearn.utils import shuffle
 from progressbar import ProgressBar
 
 DATAPATH = os.getenv("HOME") + "/share/data/"
 
-from main_vae_z_x import bernoullisample
-
-sys.setrecursionlimit(5000)
 
 def plot_x(model, plot, sample_z, i, n_sample, path):
-    sample_x = model.p0_sample_mean_x(sample_z)
-    sample_y = model.p1_sample_mean_x(sample_z)
+    sample_x = model.p_sample_mean_x(sample_z)
     fig = plt.figure(figsize=(10, 10))
     X, cmap = plot(sample_x[:n_sample])
 
     for j, x in enumerate(X):
         ax = fig.add_subplot(10, 10, j + 1)
-        ax.set_title(np.argmax(sample_y[j]))
         ax.imshow(x, cmap)
         ax.axis('off')
 
     plt.savefig('%s/%04d.jpg' % (path, i))
     plt.close()
 
-def train(data, activation, plot_image, rseed, n_epoch, Optimizer, l, k, sample_l, sample_k, gamma, sampling_type, n_batch, annealing, annealing_epoch, bn_layer, options_dict):
+
+def bernoullisample(x, rng):
+    return rng.binomial(1, x, size=x.shape).astype(theano.config.floatX)
+
+
+def train(data, activation, plot_image, rseed, n_epoch, Optimizer, l, k, sample_l, sample_k, alpha, sampling_type, n_batch, annealing, annealing_epoch, bn_layer, options_dict):
     np.random.seed(rseed)
     rng = np.random.RandomState(rseed)
 
@@ -56,126 +55,107 @@ def train(data, activation, plot_image, rseed, n_epoch, Optimizer, l, k, sample_
 
     if data == "mnist":
         load, plot = mnist(DATAPATH)
-        train_x, train_y, valid_x, valid_y, test_x, test_y = load(test=True)
+        train_x, _, valid_x, _, test_x, _ = load(test=True)
         train_x = np.concatenate([train_x,valid_x])
-        train_y = np.concatenate([train_y,valid_y])
         test_x = bernoullisample(test_x, rng)
 
         n_x = (28 * 28)
         n_z = 64
         n_y = 10
 
-        x0 = InputLayer((None, n_x))
-        x1 = InputLayer((None, n_y))
-
-        q0_0 = bn(DenseLayer(
-            x0, num_units=512, nonlinearity=activation))
-        q1_0 = bn(DenseLayer(
-            x1, num_units=512, nonlinearity=activation))
+        x = InputLayer((None, n_x))
+        q_0 = bn(DenseLayer(x, num_units=512, nonlinearity=activation))
         q_1 = bn(DenseLayer(
-            ConcatLayer([q0_0, q1_0]), num_units=512, nonlinearity=activation))
+            q_0, num_units=512, nonlinearity=activation))
         q_mean = DenseLayer(q_1, num_units=n_z, nonlinearity=linear)
         q_var = DenseLayer(q_1, num_units=n_z, nonlinearity=softplus)
-        q = Gaussian(q_mean, q_var, given=[x0, x1])
+        q = Gaussian(q_mean, q_var, given=[x])
 
         z = InputLayer((None, n_z))
-        p0_0 = bn(DenseLayer(
-            z, num_units=512, nonlinearity=activation))
-        p0_1 = bn(DenseLayer(
-            p0_0, num_units=512, nonlinearity=activation))
-        p0_mean = DenseLayer(p0_1, num_units=n_x, nonlinearity=sigmoid)
-        p0 = Bernoulli(p0_mean, given=[z])
-
-        p1_0 = bn(DenseLayer(
-            z, num_units=512, nonlinearity=activation))
-        p1_1 = bn(DenseLayer(
-            p1_0, num_units=512, nonlinearity=activation))
-        p1_mean = DenseLayer(p1_1, num_units=n_y, nonlinearity=softmax)
-        p1 = Categorical(p1_mean, given=[z])
-
-        p = [p0, p1]
-
-        q0_0 = bn(DenseLayer(
-            x0, num_units=512, nonlinearity=activation))
-        q0_1 = bn(DenseLayer(
-            q0_0, num_units=512, nonlinearity=activation))
-        q0_mean = DenseLayer(q0_1, num_units=n_z, nonlinearity=linear)
-        q0_var = DenseLayer(q0_1, num_units=n_z, nonlinearity=softplus)
-        q0 = Gaussian(q0_mean, q0_var, given=[x0])
-
-        q1_0 = bn(DenseLayer(
-            x1, num_units=512, nonlinearity=activation))
-        q1_1 = bn(DenseLayer(
-            q1_0, num_units=512, nonlinearity=activation))
-        q1_mean = DenseLayer(q1_1, num_units=n_z, nonlinearity=linear)
-        q1_var = DenseLayer(q1_1, num_units=n_z, nonlinearity=softplus)
-        q1 = Gaussian(q1_mean, q1_var, given=[x1])
-
-        pq = [q0, q1]
+        p_0 = bn(DenseLayer(z, num_units=512, nonlinearity=activation))
+        p_1 = bn(DenseLayer(
+            p_0, num_units=512, nonlinearity=activation))
+        p_mean = DenseLayer(p_1, num_units=n_x, nonlinearity=sigmoid)
+        p = Bernoulli(p_mean, given=[z])
 
     elif data == "mnist_2dim":
         load, plot = mnist(DATAPATH)
-        train_x, train_y, valid_x, valid_y, test_x, test_y = load(test=True)
+        train_x, _, valid_x, _, test_x, _ = load(test=True)
         train_x = np.concatenate([train_x,valid_x])
-        train_y = np.concatenate([train_y,valid_y])
         test_x = bernoullisample(test_x, rng)
 
         n_x = (28 * 28)
         n_z = 2
         n_y = 10
 
-        x0 = InputLayer((None, n_x))
-        x1 = InputLayer((None, n_y))
-
-        q0_0 = bn(DenseLayer(
-            x0, num_units=512, nonlinearity=activation))
-        q1_0 = bn(DenseLayer(
-            x1, num_units=512, nonlinearity=activation))
+        x = InputLayer((None, n_x))
+        q_0 = bn(DenseLayer(x, num_units=512, nonlinearity=activation))
         q_1 = bn(DenseLayer(
-            ConcatLayer([q0_0, q1_0]), num_units=512, nonlinearity=activation))
+            q_0, num_units=512, nonlinearity=activation))
         q_mean = DenseLayer(q_1, num_units=n_z, nonlinearity=linear)
         q_var = DenseLayer(q_1, num_units=n_z, nonlinearity=softplus)
-        q = Gaussian(q_mean, q_var, given=[x0, x1])
+        q = Gaussian(q_mean, q_var, given=[x])
 
         z = InputLayer((None, n_z))
-        p0_0 = bn(DenseLayer(
-            z, num_units=512, nonlinearity=activation))
-        p0_1 = bn(DenseLayer(
-            p0_0, num_units=512, nonlinearity=activation))
-        p0_mean = DenseLayer(p0_1, num_units=n_x, nonlinearity=sigmoid)
-        p0 = Bernoulli(p0_mean, given=[z])
+        p_0 = bn(DenseLayer(z, num_units=512, nonlinearity=activation))
+        p_1 = bn(DenseLayer(
+            p_0, num_units=512, nonlinearity=activation))
+        p_mean = DenseLayer(p_1, num_units=n_x, nonlinearity=sigmoid)
+        p = Bernoulli(p_mean, given=[z])
 
-        p1_0 = bn(DenseLayer(
-            z, num_units=512, nonlinearity=activation))
-        p1_1 = bn(DenseLayer(
-            p1_0, num_units=512, nonlinearity=activation))
-        p1_mean = DenseLayer(p1_1, num_units=n_y, nonlinearity=softmax)
-        p1 = Categorical(p1_mean, given=[z])
+    elif data == "celeba":
+        load, plot, preprocess = celeba(DATAPATH, toFloat=True)
+        x, y = load()
 
-        p = [p0, p1]
+        size = (61, 61)
+        n_x = (61 * 61)
+        n_z = 128
 
-        q0_0 = bn(DenseLayer(
-            x0, num_units=512, nonlinearity=activation))
-        q0_1 = bn(DenseLayer(
-            q0_0, num_units=512, nonlinearity=activation))
-        q0_mean = DenseLayer(q0_1, num_units=n_z, nonlinearity=linear)
-        q0_var = DenseLayer(q0_1, num_units=n_z, nonlinearity=softplus)
-        q0 = Gaussian(q0_mean, q0_var, given=[x0])
+        x = x[:191800]
+        y = y[:191800]
 
-        q1_0 = bn(DenseLayer(
-            x1, num_units=512, nonlinearity=activation))
-        q1_1 = bn(DenseLayer(
-            q1_0, num_units=512, nonlinearity=activation))
-        q1_mean = DenseLayer(q1_1, num_units=n_z, nonlinearity=linear)
-        q1_var = DenseLayer(q1_1, num_units=n_z, nonlinearity=softplus)
-        q1 = Gaussian(q1_mean, q1_var, given=[x1])
+        train_x, test_x, train_y, test_y = train_test_split(
+            x, y, test_size=0.01, random_state=rseed)
 
-        pq = [q0, q1]
+        n_y = len(train_y[0])
+
+        x = InputLayer((None, 3, 61, 61))
+        z = InputLayer((None, n_z))
+        y_in = InputLayer((None, n_y))
+
+        q_0 = Conv2DLayer(x, num_filters=64, filter_size=5,
+                          stride=2, nonlinearity=activation)
+        q_1 = batch_norm(Conv2DLayer(q_0, num_filters=64 * 2,
+                                     filter_size=5, stride=2, nonlinearity=activation))
+        q_2 = batch_norm(Conv2DLayer(q_1, num_filters=64 * 4,
+                                     filter_size=5, stride=2, nonlinearity=activation))
+        q_3 = DenseLayer(FlattenLayer(q_2), num_units=1024,
+                         nonlinearity=activation)
+        q_mean = DenseLayer(q_3, num_units=n_z, nonlinearity=linear)
+        q_var = DenseLayer(q_3, num_units=n_z, nonlinearity=softplus)
+        q = Gaussian(q_mean, q_var, given=[x])
+
+        p_0 = DenseLayer(z, num_units=64 * 4 * 5 * 5, nonlinearity=activation)
+        p_1 = ReshapeLayer(p_0, (([0], 64 * 4, 5, 5)))
+        p_2 = batch_norm(Deconv2DLayer(p_1, num_filters=64 * 2,
+                                       filter_size=5, stride=2, nonlinearity=activation))
+        p_3 = batch_norm(Deconv2DLayer(p_2, num_filters=64,
+                                       filter_size=5, stride=2, nonlinearity=activation))
+        p_mean = Deconv2DLayer(
+            p_3, num_filters=3, filter_size=5, stride=2, nonlinearity=linear)
+        p_var = Deconv2DLayer(p_3, num_filters=3,
+                              filter_size=5, stride=2, nonlinearity=softplus)
+
+        p = Gaussian(p_mean, p_var, given=[z])
 
     else:
         sys.exit()
 
-    model = MVAE(q, p, pq, n_batch, Optimizer, l=l, random=rseed, gamma=gamma)
+    if alpha == None:
+        model = VAE(q, p, n_batch, Optimizer, l=l, random=rseed)
+    else:
+        model = VAE(q, p, n_batch, Optimizer, l=l,
+                    k=k, alpha=alpha, random=rseed)
 
     pbar = ProgressBar(maxval=n_epoch).start()
     lowerbound_all = []
@@ -200,24 +180,24 @@ def train(data, activation, plot_image, rseed, n_epoch, Optimizer, l, k, sample_
         annealing_epoch = 1
 
     for i in range(1, n_epoch + 1):
-        train_x, train_y = shuffle(train_x, train_y)
-        lowerbound_train = model.train([bernoullisample(train_x, rng), train_y], annealing_beta=annealing_beta)
+        np.random.shuffle(train_x)
+
+        lowerbound_train = model.train(
+            [bernoullisample(train_x, rng)], annealing_beta=annealing_beta)
         if i < annealing_epoch:
             annealing_beta = i / float(annealing_epoch - 1)
+
         if ((i % 100 == 0) or (i == 1)) and (plot_image is True):
             log_likelihood_test = model.log_likelihood_test(
-                [test_x, test_y], k=sample_k, l=sample_l, mode=sampling_type, n_batch=10)
-            log_conditional_likelihood_test = model.log_likelihood_test(
-                [test_x, test_y], k=sample_k, l=sample_l, mode=sampling_type, type_p="conditional", n_batch=10, sampling_n=5000)
-            log_mg_likelihood_test = model.log_likelihood_test(
-                [test_x, test_y], k=sample_k, l=sample_l, mode=sampling_type, type_p="marginal", n_batch=10)
-            log_pseudo_mg_likelihood_test = model.log_likelihood_test(
-                [test_x], k=sample_k, l=sample_l, mode=sampling_type, type_p="pseudo_marginal", n_batch=10)
-            log_pseudo_conditional_likelihood_test = model.log_likelihood_test(
-                [test_x, test_y], k=sample_k, l=sample_l, mode=sampling_type, type_p="pseudo_conditional", n_batch=10, sampling_n=5000)
-
-            lw = "epoch = %d lower bound (train) = %lf ( %lf %lf %lf ) log likelihood (test) = %lf conditional log likelihood (test) = %lf mg log likelihood (test) = %lf pseudo_mg log likelihood (test) = %lf pseudo_conditional log likelihood (test) = %lf\n" % (
-                i, sum(lowerbound_train[:3]), lowerbound_train[0], lowerbound_train[1], lowerbound_train[2], np.mean(log_likelihood_test), np.mean(log_conditional_likelihood_test), np.mean(log_mg_likelihood_test), np.mean(log_pseudo_mg_likelihood_test), np.mean(log_pseudo_conditional_likelihood_test))
+                [test_x], k=1, l=1, mode=sampling_type)
+            log_likelihood_test_5000 = model.log_likelihood_test(
+                [test_x], n_batch=10, k=sample_k, l=sample_l, mode=sampling_type)
+            if alpha == None:
+                lw = "epoch = %d, lower bound (train) = %lf (%lf %lf) lower bound (test) = %lf lower bound (test 5000) = %lf\n" % (i, sum(
+                    lowerbound_train), lowerbound_train[0], lowerbound_train[1], np.mean(log_likelihood_test), np.mean(log_likelihood_test_5000))
+            else:
+                lw = "epoch = %d, lower bound (train) = %lf lower bound (test) = %lf\n" % (
+                    i, lowerbound_train, np.mean(log_likelihood_test))
 
             f = open(os.path.join(dirpath, "temp.txt"), "a")
             f.write(lw)
@@ -236,14 +216,6 @@ def train(data, activation, plot_image, rseed, n_epoch, Optimizer, l, k, sample_
                 model_path = os.path.join(dirpath, "q.pkl")
                 with open(model_path, "w") as f:
                     pickle.dump(q, f)
-                print "save %s" % model_path
-            except:
-                sys.exit()
-
-            try:
-                model_path = os.path.join(dirpath, "pq.pkl")
-                with open(model_path, "w") as f:
-                    pickle.dump(pq, f)
                 print "save %s" % model_path
             except:
                 sys.exit()
@@ -282,7 +254,7 @@ if __name__ == "__main__":
 
     parser.add_option(
         '--plot',
-        action='store_true',
+        action='store_false',
         dest='plot_image',
         help='Set plot image flag'
     )
@@ -352,13 +324,13 @@ if __name__ == "__main__":
     parser.set_defaults(sample_k=1000)
 
     parser.add_option(
-        '--gamma',
+        '--alpha',
         action='store',
-        type='float',
-        dest='gamma',
-        help='Set penalty paramater'
+        type='int',
+        dest='alpha',
+        help='Set a model'
     )
-    parser.set_defaults(gamma=1)
+    parser.set_defaults(alpha=None)
 
     parser.add_option(
         '--sampling_type',
@@ -433,7 +405,7 @@ if __name__ == "__main__":
                            options.k,
                            options.sample_l,
                            options.sample_k,
-                           options.gamma,
+                           options.alpha,
                            options.sampling_type,
                            options.n_batch,
                            options.annealing,
