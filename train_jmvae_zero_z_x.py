@@ -26,8 +26,7 @@ from progressbar import ProgressBar
 
 DATAPATH = os.getenv("HOME") + "/share/data/"
 
-from train_vae_z_x import bernoullisample
-from train_jmvae_kl_z_x import plot_x
+from train_jmvae_kl_z_x import plot_x, bernoullisample
 
 
 def train(data, activation, plot_image, rseed, n_epoch, Optimizer, l, k, sample_l, sample_k, sampling_type, n_batch, annealing, annealing_epoch, bn_layer, options_dict):

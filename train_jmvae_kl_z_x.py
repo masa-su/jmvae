@@ -45,6 +45,11 @@ def plot_x(model, plot, sample_z, i, n_sample, path):
     plt.savefig('%s/%04d.jpg' % (path, i))
     plt.close()
 
+
+def bernoullisample(x, rng):
+    return rng.binomial(1, x, size=x.shape).astype(theano.config.floatX)
+
+
 def train(data, activation, plot_image, rseed, n_epoch, Optimizer, l, k, sample_l, sample_k, gamma, sampling_type, n_batch, annealing, annealing_epoch, bn_layer, options_dict):
     np.random.seed(rseed)
     rng = np.random.RandomState(rseed)
